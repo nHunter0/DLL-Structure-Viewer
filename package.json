@@ -4,6 +4,10 @@
   "description": "View the structure of DLL and EXE files - exports, imports, dependency trees, PE headers, and sections",
   "version": "1.0.0",
   "publisher": "nhunter0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nHunter0/DLL-Structure-Viewer"
+  },
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.85.0"
