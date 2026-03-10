@@ -149,7 +149,9 @@ function decodeFlags(value: number, table: Record<number, string>): string[] {
 
 function rvaToOffset(rva: number, sections: SectionHeader[]): number | null {
     for (const sec of sections) {
-        if (rva >= sec.virtualAddress && rva < sec.virtualAddress + sec.virtualSize) {
+        // PE spec: if virtualSize is 0, use sizeOfRawData as the section extent
+        const effectiveSize = sec.virtualSize || sec.sizeOfRawData;
+        if (rva >= sec.virtualAddress && rva < sec.virtualAddress + effectiveSize) {
             return rva - sec.virtualAddress + sec.pointerToRawData;
         }
     }
@@ -488,7 +490,7 @@ function parseImports(
     let current = offset;
 
     for (let safety = 0; safety < 1000; safety++) {
-        if (!r.hasBytes(current + 20 - r.offset)) break;
+        if (current + 20 > r.length) break;
         r.seek(current);
 
         const iltRva = r.u32();

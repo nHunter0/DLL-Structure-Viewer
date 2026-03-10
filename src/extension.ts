@@ -1,11 +1,36 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { parsePeFile } from './peParser';
+import { parseElfFile } from './elfParser';
 import { DependencyResolver } from './dependencyResolver';
 import { getWebviewContent } from './webviewContent';
+import { BinaryFormat } from './types';
 
-class DllEditorProvider implements vscode.CustomReadonlyEditorProvider {
+/** Detect binary format by reading magic bytes */
+function detectFormat(filePath: string): BinaryFormat | null {
+    try {
+        const fd = fs.openSync(filePath, 'r');
+        const buf = Buffer.alloc(4);
+        fs.readSync(fd, buf, 0, 4, 0);
+        fs.closeSync(fd);
+
+        // ELF: \x7fELF
+        if (buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46) {
+            return 'elf';
+        }
+        // PE: MZ
+        if (buf[0] === 0x4d && buf[1] === 0x5a) {
+            return 'pe';
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+class BinaryEditorProvider implements vscode.CustomReadonlyEditorProvider {
     constructor(private readonly context: vscode.ExtensionContext) {}
 
     openCustomDocument(
@@ -26,8 +51,8 @@ class DllEditorProvider implements vscode.CustomReadonlyEditorProvider {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    // Register custom editor provider — this makes it the default for .dll files
-    const editorProvider = new DllEditorProvider(context);
+    // Register custom editor provider
+    const editorProvider = new BinaryEditorProvider(context);
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(
             'dllViewer.structureView',
@@ -39,7 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Also keep the right-click command for opening from context menu
+    // Right-click command for opening from context menu
     const command = vscode.commands.registerCommand(
         'dllViewer.viewStructure',
         async (uri?: vscode.Uri) => {
@@ -48,16 +73,15 @@ export function activate(context: vscode.ExtensionContext) {
                     canSelectFiles: true,
                     canSelectMany: false,
                     filters: {
-                        'PE Files': ['dll', 'exe', 'sys', 'ocx', 'drv'],
+                        'Binary Files': ['dll', 'exe', 'sys', 'ocx', 'drv', 'so', 'cpl', 'scr', 'efi', 'mui', 'ax', 'ko', 'elf', 'axf'],
                         'All Files': ['*'],
                     },
-                    title: 'Select a DLL or EXE file',
+                    title: 'Select a binary file',
                 });
                 if (!files || files.length === 0) return;
                 uri = files[0];
             }
 
-            // Open using the custom editor
             await vscode.commands.executeCommand(
                 'vscode.openWith',
                 uri,
@@ -82,7 +106,8 @@ function setupWebview(
         localResourceRoots: [],
     };
 
-    panel.title = `DLL: ${fileName}`;
+    const format = detectFormat(filePath);
+    panel.title = format === 'elf' ? `ELF: ${fileName}` : `DLL: ${fileName}`;
 
     // Generate nonce for CSP
     const nonce = crypto.randomBytes(16).toString('hex');
@@ -95,25 +120,30 @@ function setupWebview(
         async (message) => {
             if (message.type === 'ready') {
                 try {
-                    const peData = parsePeFile(filePath);
-                    panel.webview.postMessage({ type: 'peData', data: peData });
+                    if (format === 'elf') {
+                        const elfData = parseElfFile(filePath);
+                        panel.webview.postMessage({ type: 'elfData', data: elfData });
+                    } else {
+                        const peData = parsePeFile(filePath);
+                        panel.webview.postMessage({ type: 'peData', data: peData });
 
-                    // Resolve dependencies in the background
-                    const resolver = new DependencyResolver(path.dirname(filePath));
-                    const tree = await resolver.resolve(filePath, {
-                        maxDepth: 10,
-                        onProgress: (current, count) => {
-                            panel.webview.postMessage({
-                                type: 'progress',
-                                data: { current, count },
-                            });
-                        },
-                    });
-                    panel.webview.postMessage({ type: 'dependencyTree', data: tree });
+                        // Resolve dependencies in the background (PE only)
+                        const resolver = new DependencyResolver(path.dirname(filePath));
+                        const tree = await resolver.resolve(filePath, {
+                            maxDepth: 10,
+                            onProgress: (current, count) => {
+                                panel.webview.postMessage({
+                                    type: 'progress',
+                                    data: { current, count },
+                                });
+                            },
+                        });
+                        panel.webview.postMessage({ type: 'dependencyTree', data: tree });
+                    }
                 } catch (err: any) {
                     panel.webview.postMessage({
                         type: 'error',
-                        data: { message: err.message || 'Failed to parse PE file' },
+                        data: { message: err.message || 'Failed to parse binary file' },
                     });
                 }
             }

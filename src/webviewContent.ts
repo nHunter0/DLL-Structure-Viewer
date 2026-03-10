@@ -663,7 +663,7 @@ body {
 <div id="app">
     <div class="loading">
         <div class="spinner"></div>
-        <div>Parsing PE file...</div>
+        <div>Parsing binary file...</div>
     </div>
 </div>
 <script nonce="${nonce}">
@@ -686,6 +686,8 @@ body {
 
     // ─── State ──────────────────────────────────────────────
     let peData = null;
+    let elfData = null;
+    let fileFormat = null; // 'pe' or 'elf'
     let depTree = null;
     let currentTab = 'overview';
     let expandedImports = new Set();
@@ -732,7 +734,7 @@ body {
             const tab = document.createElement('div');
             tab.className = 'tab' + (t.id === currentTab ? ' active' : '');
             let badgeHTML = '';
-            if (peData) {
+            if (peData || elfData) {
                 const count = getBadgeCount(t.id);
                 if (count > 0) badgeHTML = '<span class="badge">' + (count > 999 ? '999+' : count) + '</span>';
             }
@@ -747,31 +749,50 @@ body {
         content.className = 'tab-content';
         app.appendChild(content);
 
-        if (!peData) {
-            content.innerHTML = '<div class="loading"><div class="spinner"></div><div>Parsing PE file...</div></div>';
+        if (!peData && !elfData) {
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><div>Parsing binary file...</div></div>';
             return;
         }
 
-        switch (currentTab) {
-            case 'overview': renderOverview(content); break;
-            case 'exports': renderExports(content); break;
-            case 'imports': renderImports(content); break;
-            case 'dependencies': renderDependencies(content); break;
-            case 'sections': renderSections(content); break;
-        }
+        if (fileFormat === 'elf') {
+            switch (currentTab) {
+                case 'overview': renderElfOverview(content); break;
+                case 'exports': renderElfExports(content); break;
+                case 'imports': renderElfImports(content); break;
+                case 'dependencies': renderElfDependencies(content); break;
+                case 'sections': renderElfSections(content); break;
+            }
+        } else {
+            switch (currentTab) {
+                case 'overview': renderOverview(content); break;
+                case 'exports': renderExports(content); break;
+                case 'imports': renderImports(content); break;
+                case 'dependencies': renderDependencies(content); break;
+                case 'sections': renderSections(content); break;
+            }
 
-        // Progress bar for deps
-        if (!depTree && currentTab !== 'dependencies') {
-            // show nothing
+            // Progress bar for deps
+            if (!depTree && currentTab !== 'dependencies') {
+                // show nothing
+            }
         }
     }
 
     function getBadgeCount(tabId) {
+        if (fileFormat === 'elf' && elfData) {
+            switch (tabId) {
+                case 'exports': return elfData.exports.length;
+                case 'imports': return elfData.imports.length;
+                case 'dependencies': return elfData.neededLibraries.length;
+                case 'sections': return elfData.sections.length;
+                default: return 0;
+            }
+        }
         if (!peData) return 0;
         switch (tabId) {
             case 'exports': return peData.exports ? peData.exports.entries.length : 0;
             case 'imports': return peData.imports.length + peData.delayImports.length;
-            case 'dependencies': return depTree ? depTree.totalModules : 0;
+            case 'dependencies': return depTree ? depTree.root.children.length : 0;
             case 'sections': return peData.sections.length;
             default: return 0;
         }
@@ -1047,22 +1068,22 @@ body {
             html += '<div class="dep-card-grid">';
             tree.root.children.forEach(function(child) {
                 let cls = 'dep-card';
-                if (!child.module.resolvedPath) cls += ' missing';
-                else if (child.module.isApiSet) cls += ' apiset';
+                if (child.module.isApiSet) cls += ' apiset';
+                else if (!child.module.resolvedPath) cls += ' missing';
                 else if (child.isCircular) cls += ' circular';
 
                 html += '<div class="' + cls + '">';
                 html += '<div class="dep-card-header">';
                 html += '<span class="dep-card-name">' + esc(child.module.name) + '</span>';
-                if (!child.module.resolvedPath) html += '<span class="dep-card-badge missing-badge">Missing</span>';
-                else if (child.module.isApiSet) html += '<span class="dep-card-badge apiset-badge">API Set</span>';
+                if (child.module.isApiSet) html += '<span class="dep-card-badge apiset-badge">API Set</span>';
+                else if (!child.module.resolvedPath) html += '<span class="dep-card-badge missing-badge">Missing</span>';
                 else if (child.module.isSystem) html += '<span class="dep-card-badge system-badge">System</span>';
                 html += '</div>';
                 html += '<div class="dep-card-meta">';
                 if (child.children.length > 0) html += '<span>' + child.children.length + ' deps</span>';
                 html += '</div>';
-                html += '<div class="dep-card-path' + (!child.module.resolvedPath ? ' missing-path' : '') + '">';
-                html += esc(child.module.resolvedPath ? truncPath(child.module.resolvedPath, 55) : 'Not found on disk');
+                html += '<div class="dep-card-path' + (!child.module.resolvedPath && !child.module.isApiSet ? ' missing-path' : '') + '">';
+                html += esc(child.module.resolvedPath ? truncPath(child.module.resolvedPath, 55) : (child.module.isApiSet ? 'Virtual API Set redirection' : 'Not found on disk'));
                 html += '</div></div>';
             });
             html += '</div>';
@@ -1105,17 +1126,17 @@ body {
 
                 // Icon
                 let iconCls = 'tree-icon lib';
-                if (!node.module.resolvedPath) iconCls = 'tree-icon warn';
-                else if (node.module.isApiSet) iconCls = 'tree-icon api';
+                if (node.module.isApiSet) iconCls = 'tree-icon api';
+                else if (!node.module.resolvedPath) iconCls = 'tree-icon warn';
                 else if (node.isCircular) iconCls = 'tree-icon circ';
                 html += '<span class="' + iconCls + '">' + ICONS.lib + '</span>';
 
                 html += '<span class="tree-name">' + esc(node.module.name) + '</span>';
 
                 // Badges
-                if (!node.module.resolvedPath) html += '<span class="tree-badge missing">Missing</span>';
-                if (node.isCircular) html += '<span class="tree-badge circular">Circular</span>';
                 if (node.module.isApiSet) html += '<span class="tree-badge apiset">API Set</span>';
+                else if (!node.module.resolvedPath) html += '<span class="tree-badge missing">Missing</span>';
+                if (node.isCircular) html += '<span class="tree-badge circular">Circular</span>';
                 if (node.module.isSystem && node.module.resolvedPath) html += '<span class="tree-badge system">System</span>';
                 if (node.children.length > 0 && !node.isCircular && !isExpanded) html += '<span class="tree-badge system">' + node.children.length + '</span>';
 
@@ -1237,12 +1258,323 @@ body {
         container.innerHTML = html;
     }
 
+    // ─── ELF Overview Tab ────────────────────────────────────
+    function renderElfOverview(container) {
+        const elf = elfData;
+        let html = '';
+
+        // Header
+        html += '<div class="overview-header">';
+        html += '<div class="overview-icon">' + ICONS.lib + '</div>';
+        html += '<div>';
+        html += '<div class="overview-title">' + esc(elf.fileName) + '</div>';
+        html += '<div class="overview-subtitle">' + esc(elf.header.machineDescription) + ' &middot; ' + esc(elf.header.classDescription) + ' &middot; ' + esc(elf.header.typeDescription) + '</div>';
+        html += '</div></div>';
+
+        // Stats
+        html += '<div class="stat-grid">';
+        html += statCard('File Size', formatBytes(elf.fileSize));
+        html += statCard('Exports', elf.exports.length.toString());
+        html += statCard('Imports', elf.imports.length.toString());
+        html += statCard('Sections', elf.sections.length.toString());
+        html += statCard('Entry Point', elf.header.entryPoint);
+        html += statCard('Needed Libs', elf.neededLibraries.length.toString());
+        html += '</div>';
+
+        // Errors
+        if (elf.errors && elf.errors.length > 0) {
+            elf.errors.forEach(function(e) {
+                html += '<div class="error-banner">' + ICONS.warn + ' <span>[' + esc(e.stage) + '] ' + esc(e.message) + '</span></div>';
+            });
+        }
+
+        // ELF Header
+        html += '<div class="info-section"><h2>ELF Header</h2><table class="info-table">';
+        html += infoRow('Class', elf.header.classDescription);
+        html += infoRow('Data', elf.header.dataDescription);
+        html += infoRow('OS/ABI', elf.header.osabiDescription);
+        html += infoRow('Type', elf.header.typeDescription);
+        html += infoRow('Machine', elf.header.machineDescription);
+        html += infoRow('Entry Point', elf.header.entryPoint);
+        if (elf.soname) html += infoRow('SONAME', elf.soname);
+        html += infoRow('Program Headers', elf.header.phnum + ' (' + elf.header.phentsize + ' bytes each)');
+        html += infoRow('Section Headers', elf.header.shnum + ' (' + elf.header.shentsize + ' bytes each)');
+        html += '</table></div>';
+
+        // Program Headers
+        if (elf.programHeaders.length > 0) {
+            html += '<div class="info-section"><h2>Program Headers (Segments)</h2>';
+            html += '<table class="info-table"><thead><tr><th>Type</th><th>Offset</th><th>VAddr</th><th>File Size</th><th>Mem Size</th><th>Flags</th></tr></thead><tbody>';
+            elf.programHeaders.forEach(function(ph) {
+                html += '<tr>';
+                html += '<td>' + esc(ph.typeDescription) + '</td>';
+                html += '<td class="mono">' + hex(ph.offset) + '</td>';
+                html += '<td class="mono">' + esc(ph.vaddr) + '</td>';
+                html += '<td class="mono">' + formatBytes(ph.filesz) + '</td>';
+                html += '<td class="mono">' + formatBytes(ph.memsz) + '</td>';
+                html += '<td><div class="section-flags">';
+                ph.flagNames.forEach(function(f) {
+                    let cls = 'section-flag default';
+                    const fl = f.toLowerCase();
+                    if (fl === 'read') cls = 'section-flag read';
+                    else if (fl === 'write') cls = 'section-flag write';
+                    else if (fl === 'execute') cls = 'section-flag execute';
+                    html += '<span class="' + cls + '">' + esc(f) + '</span>';
+                });
+                html += '</div></td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+
+        // Dynamic entries (key ones)
+        const keyDynTags = ['NEEDED', 'SONAME', 'RPATH', 'RUNPATH', 'FLAGS', 'FLAGS_1'];
+        const keyEntries = elf.dynamicEntries.filter(function(d) { return keyDynTags.indexOf(d.tagName) >= 0; });
+        if (keyEntries.length > 0) {
+            html += '<div class="info-section"><h2>Dynamic Info</h2>';
+            html += '<table class="info-table"><thead><tr><th>Tag</th><th>Value</th></tr></thead><tbody>';
+            keyEntries.forEach(function(d) {
+                html += '<tr><td>' + esc(d.tagName) + '</td><td class="mono">' + esc(d.value) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+
+        container.innerHTML = html;
+    }
+
+    // ─── ELF Exports Tab ──────────────────────────────────────
+    function renderElfExports(container) {
+        const exports = elfData.exports;
+        if (!exports || exports.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="icon">' + ICONS.method + '</div><div>No exported symbols found in this file.</div></div>';
+            return;
+        }
+
+        let html = '<div class="panel-header"><h2>' + exports.length + ' exported symbols</h2>';
+        html += '<div class="search-bar">' + ICONS.search + '<input type="text" class="search-input" placeholder="Filter exports..." id="export-search"></div></div>';
+        html += '<div class="export-table-header"><span>Value</span><span>Name</span><span>Type</span><span>Bind</span></div>';
+        html += '<div class="export-list" id="export-list"></div>';
+        container.innerHTML = html;
+
+        const listEl = document.getElementById('export-list');
+        const searchEl = document.getElementById('export-search');
+
+        function renderRows(query) {
+            const q = (query || '').toLowerCase();
+            const filtered = exports.filter(function(e) {
+                if (!q) return true;
+                return e.name.toLowerCase().includes(q) || e.type.toLowerCase().includes(q) || e.bind.toLowerCase().includes(q);
+            });
+
+            if (filtered.length > 500) {
+                renderVirtualElfSymbols(listEl, filtered);
+            } else {
+                let rows = '';
+                filtered.forEach(function(e, i) {
+                    rows += '<div class="export-row' + (i % 2 === 0 ? ' even' : '') + '">';
+                    rows += '<span class="export-ordinal">' + esc(e.value) + '</span>';
+                    rows += '<span class="export-name">' + esc(e.name) + '</span>';
+                    rows += '<span class="export-rva">' + esc(e.type) + '</span>';
+                    rows += '<span class="export-info">';
+                    rows += '<span class="tag">' + esc(e.bind) + '</span>';
+                    if (e.size > 0) rows += ' <span class="tag">' + formatBytes(e.size) + '</span>';
+                    rows += '</span></div>';
+                });
+                listEl.innerHTML = rows;
+            }
+        }
+
+        renderRows('');
+
+        let debounce;
+        searchEl.addEventListener('input', function() {
+            clearTimeout(debounce);
+            debounce = setTimeout(function() { renderRows(searchEl.value); }, 120);
+        });
+    }
+
+    function renderVirtualElfSymbols(container, entries) {
+        const ROW_HEIGHT = 28;
+        container.innerHTML = '';
+        container.style.position = 'relative';
+
+        const spacer = document.createElement('div');
+        spacer.style.height = (entries.length * ROW_HEIGHT) + 'px';
+        spacer.style.position = 'relative';
+        container.appendChild(spacer);
+
+        const visible = new Map();
+        const scrollParent = container.closest('.tab-content');
+
+        function update() {
+            const scrollTop = scrollParent.scrollTop - container.offsetTop;
+            const viewH = scrollParent.clientHeight;
+            const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 5);
+            const last = Math.min(entries.length, Math.ceil((scrollTop + viewH) / ROW_HEIGHT) + 5);
+
+            for (const [idx, el] of visible) {
+                if (idx < first || idx >= last) { el.remove(); visible.delete(idx); }
+            }
+
+            for (let i = first; i < last; i++) {
+                if (visible.has(i)) continue;
+                const e = entries[i];
+                const row = document.createElement('div');
+                row.className = 'export-row' + (i % 2 === 0 ? ' even' : '');
+                row.style.position = 'absolute';
+                row.style.top = (i * ROW_HEIGHT) + 'px';
+                row.style.width = '100%';
+                row.style.height = ROW_HEIGHT + 'px';
+                row.innerHTML = '<span class="export-ordinal">' + esc(e.value) + '</span>'
+                    + '<span class="export-name">' + esc(e.name) + '</span>'
+                    + '<span class="export-rva">' + esc(e.type) + '</span>'
+                    + '<span class="export-info"><span class="tag">' + esc(e.bind) + '</span></span>';
+                spacer.appendChild(row);
+                visible.set(i, row);
+            }
+        }
+
+        scrollParent.addEventListener('scroll', function() { requestAnimationFrame(update); });
+        update();
+    }
+
+    // ─── ELF Imports Tab ──────────────────────────────────────
+    function renderElfImports(container) {
+        const imports = elfData.imports;
+        if (!imports || imports.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="icon">' + ICONS.refs + '</div><div>No imported symbols found in this file.</div></div>';
+            return;
+        }
+
+        let html = '<div class="panel-header"><h2>' + imports.length + ' imported symbols</h2>';
+        html += '<div class="search-bar">' + ICONS.search + '<input type="text" class="search-input" placeholder="Filter imports..." id="import-search"></div></div>';
+        html += '<div class="export-table-header"><span>Bind</span><span>Name</span><span>Type</span><span>Info</span></div>';
+        html += '<div class="export-list" id="import-list"></div>';
+        container.innerHTML = html;
+
+        const listEl = document.getElementById('import-list');
+        const searchEl = document.getElementById('import-search');
+
+        function renderRows(query) {
+            const q = (query || '').toLowerCase();
+            const filtered = imports.filter(function(e) {
+                if (!q) return true;
+                return e.name.toLowerCase().includes(q) || e.type.toLowerCase().includes(q);
+            });
+
+            let rows = '';
+            filtered.forEach(function(e, i) {
+                rows += '<div class="export-row' + (i % 2 === 0 ? ' even' : '') + '">';
+                rows += '<span class="export-ordinal"><span class="tag">' + esc(e.bind) + '</span></span>';
+                rows += '<span class="export-name">' + esc(e.name) + '</span>';
+                rows += '<span class="export-rva">' + esc(e.type) + '</span>';
+                rows += '<span class="export-info">';
+                if (e.visibility !== 'DEFAULT') rows += '<span class="tag">' + esc(e.visibility) + '</span>';
+                rows += '</span></div>';
+            });
+            listEl.innerHTML = rows;
+        }
+
+        renderRows('');
+
+        let debounce;
+        searchEl.addEventListener('input', function() {
+            clearTimeout(debounce);
+            debounce = setTimeout(function() { renderRows(searchEl.value); }, 120);
+        });
+    }
+
+    // ─── ELF Dependencies Tab ─────────────────────────────────
+    function renderElfDependencies(container) {
+        const needed = elfData.neededLibraries;
+        if (!needed || needed.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="icon">' + ICONS.tree + '</div><div>No shared library dependencies found.</div></div>';
+            return;
+        }
+
+        let html = '';
+
+        // Summary
+        html += '<div class="dep-summary">';
+        html += '<div class="dep-stat"><span class="dep-stat-val">' + needed.length + '</span><span class="dep-stat-label">Needed Libraries</span></div>';
+        html += '</div>';
+
+        // Library cards
+        html += '<div class="dep-section-title">Required Shared Libraries (DT_NEEDED)</div>';
+        html += '<div class="dep-card-grid">';
+        needed.forEach(function(lib) {
+            html += '<div class="dep-card">';
+            html += '<div class="dep-card-header">';
+            html += '<span class="dep-card-name">' + esc(lib) + '</span>';
+            html += '<span class="dep-card-badge system-badge">Shared Lib</span>';
+            html += '</div>';
+            html += '<div class="dep-card-path">Linked via DT_NEEDED</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+
+        // Dynamic entries table
+        const dynEntries = elfData.dynamicEntries;
+        if (dynEntries && dynEntries.length > 0) {
+            html += '<div class="dep-section-title">All Dynamic Entries (' + dynEntries.length + ')</div>';
+            html += '<table class="info-table"><thead><tr><th>Tag</th><th>Value</th></tr></thead><tbody>';
+            dynEntries.forEach(function(d) {
+                html += '<tr><td>' + esc(d.tagName) + '</td><td class="mono">' + esc(d.value) + '</td></tr>';
+            });
+            html += '</tbody></table>';
+        }
+
+        container.innerHTML = html;
+    }
+
+    // ─── ELF Sections Tab ─────────────────────────────────────
+    function renderElfSections(container) {
+        const secs = elfData.sections;
+        if (!secs || secs.length === 0) {
+            container.innerHTML = '<div class="empty-state"><div class="icon">' + ICONS.layers + '</div><div>No sections found.</div></div>';
+            return;
+        }
+
+        let html = '<table class="sections-table"><thead><tr>';
+        html += '<th>Name</th><th>Type</th><th>Address</th><th>Offset</th><th>Size</th><th>Flags</th>';
+        html += '</tr></thead><tbody>';
+
+        secs.forEach(function(s) {
+            if (s.type === 0) return; // Skip NULL section
+            html += '<tr>';
+            html += '<td style="font-weight:600">' + esc(s.name) + '</td>';
+            html += '<td>' + esc(s.typeDescription) + '</td>';
+            html += '<td class="mono">' + esc(s.addr) + '</td>';
+            html += '<td class="mono">' + hex(s.offset) + '</td>';
+            html += '<td class="mono">' + formatBytes(s.size) + '</td>';
+            html += '<td><div class="section-flags">';
+            s.flagNames.forEach(function(f) {
+                let cls = 'section-flag default';
+                const fl = f.toLowerCase();
+                if (fl === 'alloc') cls = 'section-flag read';
+                else if (fl === 'write') cls = 'section-flag write';
+                else if (fl === 'execute') cls = 'section-flag execute';
+                else if (fl === 'strings' || fl === 'merge') cls = 'section-flag code';
+                html += '<span class="' + cls + '">' + esc(f) + '</span>';
+            });
+            html += '</div></td></tr>';
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
     // ─── Message Handling ───────────────────────────────────
     window.addEventListener('message', function(event) {
         const msg = event.data;
         switch (msg.type) {
             case 'peData':
                 peData = msg.data;
+                fileFormat = 'pe';
+                renderApp();
+                break;
+            case 'elfData':
+                elfData = msg.data;
+                fileFormat = 'elf';
                 renderApp();
                 break;
             case 'dependencyTree':
@@ -1266,12 +1598,14 @@ body {
     const prev = vscode.getState();
     if (prev) {
         peData = prev.peData;
+        elfData = prev.elfData;
+        fileFormat = prev.fileFormat;
         depTree = prev.depTree;
         currentTab = prev.currentTab || 'overview';
         if (prev.expandedImports) expandedImports = new Set(prev.expandedImports);
         if (prev.expandedTreePaths) expandedTreePaths = new Set(prev.expandedTreePaths);
     }
-    if (peData) renderApp();
+    if (peData || elfData) renderApp();
 
     // Save state on changes
     const origRender = renderApp;
@@ -1279,6 +1613,8 @@ body {
         origRender();
         vscode.setState({
             peData: peData,
+            elfData: elfData,
+            fileFormat: fileFormat,
             depTree: depTree,
             currentTab: currentTab,
             expandedImports: Array.from(expandedImports),

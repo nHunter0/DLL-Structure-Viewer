@@ -35,7 +35,17 @@ export class DependencyResolver {
             dllDir,
             path.join(winDir, 'System32'),
             path.join(winDir, 'SysWOW64'),
+            winDir,
         ];
+
+        // Add PATH directories for DLLs installed outside System32
+        const pathEnv = process.env.PATH || process.env.Path || '';
+        for (const dir of pathEnv.split(path.delimiter)) {
+            const trimmed = dir.trim();
+            if (trimmed && !this.searchPaths.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+                this.searchPaths.push(trimmed);
+            }
+        }
     }
 
     private resolveDllPath(name: string): string | null {
@@ -99,7 +109,10 @@ export class DependencyResolver {
             };
 
             if (!resolvedPath) {
-                missingCount++;
+                // API Set DLLs are virtual redirections, not truly missing
+                if (!module.isApiSet) {
+                    missingCount++;
+                }
                 return { module, children: [], isCircular: false, depth };
             }
 

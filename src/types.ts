@@ -1,3 +1,7 @@
+// ─── Binary Format Detection ────────────────────────────────────────────────
+
+export type BinaryFormat = 'pe' | 'elf';
+
 // ─── PE Format Types ────────────────────────────────────────────────────────
 
 export interface DosHeader {
@@ -113,6 +117,93 @@ export interface PeFile {
     errors: ParseError[];
 }
 
+// ─── ELF Format Types ───────────────────────────────────────────────────────
+
+export interface ElfHeader {
+    class: number;
+    classDescription: string;
+    data: number;
+    dataDescription: string;
+    version: number;
+    osabi: number;
+    osabiDescription: string;
+    type: number;
+    typeDescription: string;
+    machine: number;
+    machineDescription: string;
+    entryPoint: string;
+    phoff: number;
+    shoff: number;
+    flags: number;
+    ehsize: number;
+    phentsize: number;
+    phnum: number;
+    shentsize: number;
+    shnum: number;
+    shstrndx: number;
+}
+
+export interface ElfSectionHeader {
+    nameIndex: number;
+    name: string;
+    type: number;
+    typeDescription: string;
+    flags: number;
+    flagNames: string[];
+    addr: string;
+    offset: number;
+    size: number;
+    link: number;
+    info: number;
+    addralign: number;
+    entsize: number;
+}
+
+export interface ElfProgramHeader {
+    type: number;
+    typeDescription: string;
+    offset: number;
+    vaddr: string;
+    paddr: string;
+    filesz: number;
+    memsz: number;
+    flags: number;
+    flagNames: string[];
+    align: number;
+}
+
+export interface ElfSymbol {
+    name: string;
+    value: string;
+    size: number;
+    bind: string;
+    type: string;
+    visibility: string;
+    sectionIndex: number;
+    sectionName: string;
+}
+
+export interface ElfDynamicEntry {
+    tag: number;
+    tagName: string;
+    value: string;
+}
+
+export interface ElfFile {
+    filePath: string;
+    fileName: string;
+    fileSize: number;
+    header: ElfHeader;
+    sections: ElfSectionHeader[];
+    exports: ElfSymbol[];
+    imports: ElfSymbol[];
+    neededLibraries: string[];
+    dynamicEntries: ElfDynamicEntry[];
+    soname: string | null;
+    programHeaders: ElfProgramHeader[];
+    errors: ParseError[];
+}
+
 // ─── Dependency Tree Types ──────────────────────────────────────────────────
 
 export interface ResolvedModule {
@@ -141,6 +232,7 @@ export interface DependencyTree {
 
 export type ExtensionMessage =
     | { type: 'peData'; data: PeFile }
+    | { type: 'elfData'; data: ElfFile }
     | { type: 'dependencyTree'; data: DependencyTree }
     | { type: 'progress'; data: { current: string; count: number } }
     | { type: 'error'; data: { message: string } };
