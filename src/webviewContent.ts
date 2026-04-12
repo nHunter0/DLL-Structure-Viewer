@@ -1,7 +1,10 @@
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
 
-export function getWebviewContent(webview: vscode.Webview, nonce: string): string {
-    return /*html*/ `<!DOCTYPE html>
+export function getWebviewContent(
+  webview: vscode.Webview,
+  nonce: string,
+): string {
+  return /*html*/ `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -113,6 +116,13 @@ body {
     color: var(--badge-fg);
     font-size: var(--font-size-sm);
     font-weight: 600;
+}
+.tab .badge .badge-spinner {
+    width: 12px; height: 12px;
+    border: 2px solid var(--badge-fg);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
 }
 
 .tab .icon {
@@ -394,6 +404,9 @@ body {
     border-radius: var(--radius-sm);
     background: var(--warning);
     color: var(--bg-primary);
+}
+.import-group-badge.runtime {
+    background: var(--info, #3794ff);
 }
 .import-entries {
     padding: 0 24px 8px 48px;
@@ -735,8 +748,12 @@ body {
             tab.className = 'tab' + (t.id === currentTab ? ' active' : '');
             let badgeHTML = '';
             if (peData || elfData) {
-                const count = getBadgeCount(t.id);
-                if (count > 0) badgeHTML = '<span class="badge">' + (count > 999 ? '999+' : count) + '</span>';
+                if (t.id === 'dependencies' && peData && !depTree) {
+                    badgeHTML = '<span class="badge"><span class="badge-spinner"></span></span>';
+                } else {
+                    const count = getBadgeCount(t.id);
+                    if (count > 0) badgeHTML = '<span class="badge">' + (count > 999 ? '999+' : count) + '</span>';
+                }
             }
             tab.innerHTML = '<span class="icon">' + ICONS[t.icon] + '</span>' + esc(t.label) + badgeHTML;
             tab.addEventListener('click', () => { currentTab = t.id; searchQuery = ''; renderApp(); });
@@ -791,7 +808,7 @@ body {
         if (!peData) return 0;
         switch (tabId) {
             case 'exports': return peData.exports ? peData.exports.entries.length : 0;
-            case 'imports': return peData.imports.length + peData.delayImports.length;
+            case 'imports': return peData.imports.length + peData.delayImports.length + (peData.runtimeDependencies || []).length;
             case 'dependencies': return depTree ? depTree.root.children.length : 0;
             case 'sections': return peData.sections.length;
             default: return 0;
@@ -974,7 +991,12 @@ body {
 
     // ─── Imports Tab ────────────────────────────────────────
     function renderImports(container) {
-        const allImports = (peData.imports || []).concat(peData.delayImports || []);
+        const tableImports = (peData.imports || []).concat(peData.delayImports || []);
+        // Add runtime dependencies as import descriptors with a runtime flag
+        const runtimeDeps = (peData.runtimeDependencies || []).map(function(name) {
+            return { dllName: name, entries: [], isDelayLoad: false, isRuntime: true };
+        });
+        const allImports = tableImports.concat(runtimeDeps);
         if (allImports.length === 0) {
             container.innerHTML = '<div class="empty-state"><div class="icon">' + ICONS.refs + '</div><div>No imports found in this file.</div></div>';
             return;
@@ -1005,6 +1027,7 @@ body {
                 groups += '<span class="import-group-name">' + esc(imp.dllName) + '</span>';
                 groups += '<span class="import-group-count">' + imp.entries.length + ' functions</span>';
                 if (imp.isDelayLoad) groups += '<span class="import-group-badge">Delay Load</span>';
+                if (imp.isRuntime) groups += '<span class="import-group-badge runtime">Runtime</span>';
                 groups += '</div>';
                 groups += '<div class="import-entries' + (isOpen ? ' open' : '') + '" data-entries="' + idx + '">';
 

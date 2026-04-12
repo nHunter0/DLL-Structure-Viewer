@@ -115,6 +115,16 @@ function setupWebview(
     // Set webview content
     panel.webview.html = getWebviewContent(panel.webview, nonce);
 
+    // Track disposal so async work can bail out
+    let disposed = false;
+    panel.onDidDispose(() => { disposed = true; });
+
+    function postMessage(message: any): void {
+        if (!disposed) {
+            panel.webview.postMessage(message);
+        }
+    }
+
     // Handle messages from webview
     panel.webview.onDidReceiveMessage(
         async (message) => {
@@ -122,26 +132,26 @@ function setupWebview(
                 try {
                     if (format === 'elf') {
                         const elfData = parseElfFile(filePath);
-                        panel.webview.postMessage({ type: 'elfData', data: elfData });
+                        postMessage({ type: 'elfData', data: elfData });
                     } else {
                         const peData = parsePeFile(filePath);
-                        panel.webview.postMessage({ type: 'peData', data: peData });
+                        postMessage({ type: 'peData', data: peData });
 
                         // Resolve dependencies in the background (PE only)
                         const resolver = new DependencyResolver(path.dirname(filePath));
                         const tree = await resolver.resolve(filePath, {
                             maxDepth: 10,
                             onProgress: (current, count) => {
-                                panel.webview.postMessage({
+                                postMessage({
                                     type: 'progress',
                                     data: { current, count },
                                 });
                             },
                         });
-                        panel.webview.postMessage({ type: 'dependencyTree', data: tree });
+                        postMessage({ type: 'dependencyTree', data: tree });
                     }
                 } catch (err: any) {
-                    panel.webview.postMessage({
+                    postMessage({
                         type: 'error',
                         data: { message: err.message || 'Failed to parse binary file' },
                     });
