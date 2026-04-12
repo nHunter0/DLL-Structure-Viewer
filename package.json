@@ -2,7 +2,7 @@
   "name": "dll-structure-viewer",
   "displayName": "DLL Structure Viewer",
   "description": "View the structure of DLL, EXE, and SO files - exports, imports, dependency trees, PE/ELF headers, and sections",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "nhunter0",
   "repository": {
     "type": "git",
@@ -31,21 +31,51 @@
         "viewType": "dllViewer.structureView",
         "displayName": "DLL Structure Viewer",
         "selector": [
-          { "filenamePattern": "*.dll" },
-          { "filenamePattern": "*.exe" },
-          { "filenamePattern": "*.sys" },
-          { "filenamePattern": "*.ocx" },
-          { "filenamePattern": "*.drv" },
-          { "filenamePattern": "*.so" },
-          { "filenamePattern": "*.so.*" },
-          { "filenamePattern": "*.cpl" },
-          { "filenamePattern": "*.scr" },
-          { "filenamePattern": "*.efi" },
-          { "filenamePattern": "*.mui" },
-          { "filenamePattern": "*.ax" },
-          { "filenamePattern": "*.ko" },
-          { "filenamePattern": "*.elf" },
-          { "filenamePattern": "*.axf" }
+          {
+            "filenamePattern": "*.dll"
+          },
+          {
+            "filenamePattern": "*.exe"
+          },
+          {
+            "filenamePattern": "*.sys"
+          },
+          {
+            "filenamePattern": "*.ocx"
+          },
+          {
+            "filenamePattern": "*.drv"
+          },
+          {
+            "filenamePattern": "*.so"
+          },
+          {
+            "filenamePattern": "*.so.*"
+          },
+          {
+            "filenamePattern": "*.cpl"
+          },
+          {
+            "filenamePattern": "*.scr"
+          },
+          {
+            "filenamePattern": "*.efi"
+          },
+          {
+            "filenamePattern": "*.mui"
+          },
+          {
+            "filenamePattern": "*.ax"
+          },
+          {
+            "filenamePattern": "*.ko"
+          },
+          {
+            "filenamePattern": "*.elf"
+          },
+          {
+            "filenamePattern": "*.axf"
+          }
         ],
         "priority": "default"
       }
