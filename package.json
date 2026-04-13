@@ -2,7 +2,7 @@
   "name": "dll-structure-viewer",
   "displayName": "DLL Structure Viewer",
   "description": "View the structure of DLL, EXE, and SO files - exports, imports, dependency trees, PE/ELF headers, and sections",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "nhunter0",
   "repository": {
     "type": "git",
