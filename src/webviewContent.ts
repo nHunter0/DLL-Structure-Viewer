@@ -1027,7 +1027,7 @@ body {
                 groups += '<span class="import-group-name">' + esc(imp.dllName) + '</span>';
                 groups += '<span class="import-group-count">' + imp.entries.length + ' functions</span>';
                 if (imp.isDelayLoad) groups += '<span class="import-group-badge">Delay Load</span>';
-                if (imp.isRuntime) groups += '<span class="import-group-badge runtime">Runtime</span>';
+                if (imp.isRuntime) groups += '<span class="import-group-badge runtime">Potential Runtime</span>';
                 groups += '</div>';
                 groups += '<div class="import-entries' + (isOpen ? ' open' : '') + '" data-entries="' + idx + '">';
 

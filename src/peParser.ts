@@ -906,13 +906,6 @@ export function parseImportNames(filePath: string): string[] {
       }
     }
 
-    // Include runtime/dynamic dependencies
-    const importedSet = new Set(names.map((n) => n.toLowerCase()));
-    const runtimeDeps = scanRuntimeDependencies(buf, fileName, importedSet);
-    for (const dep of runtimeDeps) {
-      names.push(dep);
-    }
-
     return names;
   } catch {
     return [];
